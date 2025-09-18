@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PackBadgesNK Staking dApp</title>
+  <script src="https://unpkg.com/anchor-link"></script>
+  <script src="https://unpkg.com/anchor-link-browser-transport"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #111; color: #eee; margin: 0; padding: 0; }
+    header { background: #000; padding: 10px; display: flex; align-items: center; justify-content: space-between; }
+    .menu-btn { font-size: 24px; cursor: pointer; color: #ffcc00; }
+    nav { display: none; flex-direction: column; background: #222; }
+    nav a { padding: 10px; text-decoration: none; color: #eee; border-bottom: 1px solid #333; }
+    nav a:hover { background: #333; }
+    .banner { width: 100%; max-height: 250px; object-fit: cover; }
+    button { padding: 10px 20px; margin: 5px; border-radius: 10px; border: none; background: #ffcc00; font-weight: bold; cursor: pointer; }
+    .nft { display: inline-block; margin: 10px; padding: 10px; border: 1px solid #444; border-radius: 10px; width: 150px; background: #222; }
+    .nft img { width: 100%; border-radius: 8px; }
+    #nfts { margin: 20px; }
+  </style>
+</head>
+<body>
+  <!-- 🔹 Header + Menu -->
+  <header>
+    <div class="menu-btn" onclick="toggleMenu()">☰</div>
+    <h2>PackBadgesNK dApp</h2>
+  </header>
+  <nav id="menu">
+    <a href="#" onclick="loginAnchor()">🔑 Connect Wallet</a>
+    <a href="https://neftyblocks.com/creator/packbadgesnk" target="_blank">🛒 Shop</a>
+  </nav>
+
+  <!-- 🔹 Banner -->
+  <img class="banner" src="https://azure-given-moose-778.mypinata.cloud/ipfs/bafybeicv2vilzq5lz7dyq4h36ftmfv6aoseevcvbpr42nyt4i7eogyaxkq" alt="Banner">
+
+  <!-- 🔹 Wallet Info -->
+  <div id="wallet" style="text-align:center; margin: 15px; font-size: 18px;"></div>
+
+  <!-- 🔹 NFT List -->
+  <div id="nfts"></div>
+
+  <script>
+    // 🔹 Menu toggle
+    function toggleMenu() {
+      const menu = document.getElementById("menu");
+      menu.style.display = (menu.style.display === "flex") ? "none" : "flex";
+    }
+
+    // 🔹 Endpoint fallback
+    const endpoints = [
+      "https://wax.pink.gg",
+      "https://wax.eosn.io",
+      "https://api.wax.greymass.com"
+    ];
+    let currentEndpoint = 0;
+
+    // 🔹 Anchor Link setup
+    const transport = new AnchorLinkBrowserTransport();
+    let link = new AnchorLink({
+      transport,
+      chains: [{
+        chainId: "1064487b3cd1a897ce03ae5b6a865651747e2e152090f99c1f435d00ccec90d",
+        nodeUrl: endpoints[currentEndpoint]
+      }]
+    });
+
+    let session = null;
+    let userAccount = null;
+
+    // 🔹 Login pakai Anchor
+    async function loginAnchor() {
+      try {
+        const identity = await link.login("packbadgesnk"); 
+        session = identity.session;
+        userAccount = session.auth.actor;
+        document.getElementById("wallet").innerText = "Wallet: " + userAccount;
+        loadNFTs();
+      } catch (err) {
+        console.error("Login Anchor gagal:", err);
+        if (currentEndpoint < endpoints.length - 1) {
+          // coba endpoint lain
+          currentEndpoint++;
+          alert("Gagal connect, coba endpoint lain...");
+          link = new AnchorLink({
+            transport,
+            chains: [{
+              chainId: "1064487b3cd1a897ce03ae5b6a865651747e2e152090f99c1f435d00ccec90d",
+              nodeUrl: endpoints[currentEndpoint]
+            }]
+          });
+          loginAnchor();
+        } else {
+          alert("❌ Semua endpoint gagal connect Anchor");
+        }
+      }
+    }
+
+    // 🔹 Load NFT koleksi packbadgesnk
+    async function loadNFTs() {
+      const url = `https://wax.api.atomicassets.io/atomicassets/v1/assets?owner=${userAccount}&collection_name=packbadgesnk&limit=50`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      const nftDiv = document.getElementById("nfts");
+      nftDiv.innerHTML = "";
+
+      if (data.data.length === 0) {
+        nftDiv.innerHTML = "<p>❌ Tidak ada NFT dari koleksi packbadgesnk di wallet ini.</p>";
+        return;
+      }
+
+      data.data.forEach(nft => {
+        const div = document.createElement("div");
+        div.className = "nft";
+        div.innerHTML = `
+          <img src="https://ipfs.io/ipfs/${nft.data.img}" />
+          <p>${nft.name}</p>
+          <button onclick="stakeNFT('${nft.asset_id}')">Stake</button>
+          <button onclick="unstakeNFT('${nft.asset_id}')">Unstake</button>
+        `;
+        nftDiv.appendChild(div);
+      });
+    }
+
+    // 🔹 Stake NFT
+    async function stakeNFT(asset_id) {
+      try {
+        const action = {
+          account: "atomicassets",
+          name: "transfer",
+          authorization: [session.auth],
+          data: {
+            from: userAccount,
+            to: "waxdaofarmer",
+            asset_ids: [asset_id],
+            memo: "stake"
+          }
+        };
+        const result = await session.transact({ actions: [action] }, { blocksBehind: 3, expireSeconds: 120 });
+        alert("✅ NFT berhasil di-stake: " + asset_id);
+        console.log(result);
+      } catch (err) {
+        console.error("Stake gagal:", err);
+        alert("❌ Error staking NFT");
+      }
+    }
+
+    // 🔹 Unstake NFT
+    async function unstakeNFT(asset_id) {
+      try {
+        const action = {
+          account: "waxdaofarmer",
+          name: "unstake",
+          authorization: [session.auth],
+          data: {
+            owner: userAccount,
+            asset_id: asset_id
+          }
+        };
+        const result = await session.transact({ actions: [action] }, { blocksBehind: 3, expireSeconds: 120 });
+        alert("✅ NFT berhasil di-unstake: " + asset_id);
+        console.log(result);
+      } catch (err) {
+        console.error("Unstake gagal:", err);
+        alert("❌ Error unstake NFT");
+      }
+    }
+
+    // 🔹 Claim Reward
+    async function claimRewards() {
+      try {
+        const action = {
+          account: "waxdaofarmer",
+          name: "claim",
+          authorization: [session.auth],
+          data: {
+            owner: userAccount
+          }
+        };
+        const result = await session.transact({ actions: [action] }, { blocksBehind: 3, expireSeconds: 120 });
+        alert("✅ Reward berhasil di-claim!");
+        console.log(result);
+      } catch (err) {
+        console.error("Claim gagal:", err);
+        alert("❌ Error claim reward");
+      }
+    }
+  </script>
+
+  <!-- 🔹 Claim Button Global -->
+  <div style="text-align:center; margin: 20px;">
+    <button onclick="claimRewards()">💰 Claim Rewards</button>
+  </div>
+</body>
+</html>
